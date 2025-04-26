@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>POOS</title>
+  <style>
+    body { margin: 0; overflow: hidden; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const hexagon = { x: 0, y: 0, radius: 0, points: [], angle: 0, rotationSpeed: Math.PI / 4 };
+    function initHexagon() {
+      hexagon.points = [];
+      for (let i = 0; i < 6; i++) {
+        const base = Math.PI / 6 + i * Math.PI / 3 + hexagon.angle;
+        hexagon.points.push({
+          x: hexagon.x + hexagon.radius * Math.cos(base),
+          y: hexagon.y + hexagon.radius * Math.sin(base)
+        });
+      }
+    }
+    function resize() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      hexagon.x = canvas.width / 2;
+      hexagon.y = canvas.height / 2;
+      hexagon.radius = Math.min(canvas.width, canvas.height) * 0.25;
+      initHexagon();
+      ball.x = hexagon.x;
+      ball.y = hexagon.y - hexagon.radius + ball.radius;
+      ball.vx = Math.abs(ball.vx);
+      ball.vy = 0;
+    }
+    window.addEventListener('resize', resize);
+    const ball = { x: 0, y: 0, vx: 150, vy: 0, radius: 20 };
+    const gravity = 500;
+    const restitution = 1;
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    function playBounce() {
+      audioCtx.resume().catch(e => console.warn(e));
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(300 + Math.random() * 150, audioCtx.currentTime);
+      const now = audioCtx.currentTime;
+      gain.gain.setValueAtTime(0.05, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+      osc.start(now);
+      osc.stop(now + 0.2);
+    }
+    const segments = ['#ffffff', '#000000', '#ffffff', '#000000'];
+    let gradientOffset = 0;
+    const gradientSpeed = 0.2;
+    let lastTime = null;
+    resize();
+    function update(dt) {
+      hexagon.angle += hexagon.rotationSpeed * dt;
+      initHexagon();
+      ball.vy += gravity * dt;
+      ball.x += ball.vx * dt;
+      ball.y += ball.vy * dt;
+      for (let i = 0; i < 6; i++) {
+        const p1 = hexagon.points[i];
+        const p2 = hexagon.points[(i + 1) % 6];
+        const dx = p2.x - p1.x;
+        const dy = p2.y - p1.y;
+        const length = Math.hypot(dx, dy);
+        let nx = dy / length;
+        let ny = -dx / length;
+        const midx = (p1.x + p2.x) / 2;
+        const midy = (p1.y + p2.y) / 2;
+        if ((hexagon.x - midx) * nx + (hexagon.y - midy) * ny < 0) {
+          nx = -nx;
+          ny = -ny;
+        }
+        const dist = (ball.x - p1.x) * nx + (ball.y - p1.y) * ny;
+        const t = ((ball.x - p1.x) * dx + (ball.y - p1.y) * dy) / (length * length);
+        if (dist < ball.radius && t >= 0 && t <= 1) {
+          const vDotN = ball.vx * nx + ball.vy * ny;
+          if (vDotN < 0) {
+            playBounce();
+            ball.vx -= (1 + restitution) * vDotN * nx;
+            ball.vy -= (1 + restitution) * vDotN * ny;
+            const penetration = ball.radius - dist;
+            ball.x += penetration * nx;
+            ball.y += penetration * ny;
+          }
+        }
+      }
+      gradientOffset = (gradientOffset + gradientSpeed * dt) % 1;
+    }
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      for (let i = 0; i < 6; i++) {
+        const p1 = hexagon.points[i];
+        const p2 = hexagon.points[(i + 1) % 6];
+        const grad = ctx.createLinearGradient(p1.x, p1.y, p2.x, p2.y);
+        segments.forEach((col, idx) => {
+          const stop = (idx / segments.length + gradientOffset) % 1;
+          grad.addColorStop(stop, col);
+        });
+        ctx.beginPath();
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
+        ctx.strokeStyle = grad;
+        ctx.lineWidth = 4;
+        ctx.stroke();
+      }
+      ctx.beginPath();
+      ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+      ctx.fillStyle = '#07aaf5';
+      ctx.fill();
+      ctx.strokeStyle = '#07aaf5';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+    function animate(timestamp) {
+      if (lastTime === null) lastTime = timestamp;
+      let dt = (timestamp - lastTime) / 1000;
+      if (dt > 0.1) dt = 0;
+      lastTime = timestamp;
+      update(dt);
+      draw();
+      requestAnimationFrame(animate);
+    }
+    requestAnimationFrame(animate);
+  </script>
+</body>
+</html>
